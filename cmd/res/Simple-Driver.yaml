@@ -1,0 +1,50 @@
+name: "DeviceProfile"
+manufacturer: "HUST-3I"
+model: "SP-01"
+labels:
+  - "test device"
+description: "Example of Simple Device"
+
+deviceResources:
+  -
+    name: "SwitchButton"
+    description: "Switch On/Off."
+    properties:
+      value:
+        { type: "Bool", readWrite: "RW", defaultValue: "true" }
+      units:
+        { type: "String", readWrite: "R", defaultValue: "On/Off" }
+
+deviceCommands:
+  -
+    name: "Switch"
+    get:
+      - { operation: "get", deviceResource: "SwitchButton" }
+    set:
+      - { operation: "set", deviceResource: "SwitchButton", parameter: "false" }
+
+coreCommands:
+  -
+    name: "Switch"
+    get:
+      path: "/api/v1/device/{deviceId}/SwitchButton"
+      responses:
+        -
+          code: "200"
+          description: ""
+          expectedValues: ["SwitchButton"]
+        -
+          code: "503"
+          description: "service unavailable"
+          expectedValues: []
+    put:
+      path: "/api/v1/device/{deviceId}/SwitchButton"
+      parameterNames: ["SwitchButton"]
+      responses:
+        -
+          code: "200"
+          description: ""
+        -
+          code: "503"
+          description: "service unavailable"
+          expectedValues: []
