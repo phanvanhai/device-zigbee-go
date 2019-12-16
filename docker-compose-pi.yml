@@ -302,6 +302,8 @@ services:
     hostname: edgex-object-manager
     networks:
       - edgex-network
+    devices:
+      - /dev/ttyUSB0
     volumes:
       - db-data:/data/db
       - log-data:/edgex/logs
