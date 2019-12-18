@@ -275,7 +275,7 @@ services:
 # Device Services
 #################################################################
   device-zigbee:
-    image: phanvanhai/docker-device-zigbee-go:1.1.0
+    image: phanvanhai/docker-zigbee-go:1.1.0
     ports:
       - "49997:49997"
     container_name: edgex-device-zigbee
@@ -314,11 +314,11 @@ services:
       - command
 
   ui:
-    image: phanvanhai/docker-edgex-ui-go:1.1.0
+    image: phanvanhai/docker-ui-go:1.1.0
     ports:
       - "4500:4500"
-    container_name: edgex-ui-go-custom
-    hostname: edgex-ui-go-custom
+    container_name: edgex-ui-go
+    hostname: edgex-ui-go
     networks:
       - edgex-network
     volumes:
