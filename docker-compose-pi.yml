@@ -296,7 +296,7 @@ services:
 # Device Services
 #################################################################
   device-zigbee:
-    image: phanvanhai/docker-zigbee-go:1.1.0
+    image: phanvanhai/docker-zigbee-go-arm64:1.1.0
     ports:
       - "49997:49997"
     container_name: edgex-device-zigbee
