@@ -236,7 +236,28 @@ services:
       - consul-data:/consul/data
     depends_on:
       - metadata
-
+      
+  app-service-http:
+    image: edgexfoundry/docker-app-service-configurable:1.0.0
+    ports:
+      - "48200:48200"
+    container_name: edgex-app-service-configurable-http
+    hostname: edgex-app-service-configurable-http
+    networks:
+      edgex-network:
+        aliases:
+          - edgex-app-service-configurable-http
+    environment:
+      <<: *common-variables
+      edgex_service: http://edgex-app-service-configurable-http:48200
+      edgex_profile: http-export
+      Service_Host: edgex-app-service-configurable-http
+      MessageBus_SubscribeHost_Host: edgex-core-data
+    depends_on:
+      - consul
+      - logging
+      - data
+      
   app-service-rules:
     image: edgexfoundry/docker-app-service-configurable-arm64:1.0.0
     ports:
