@@ -1,27 +1,27 @@
 [Service]
-Host = "edgex-device-virtual"
-Port = 49990
+Host = "device-zigbee"
+Port = 49997
 ConnectRetries = 3
 Labels = []
-OpenMsg = "device virtual started"
+OpenMsg = "device zigbee started"
 Timeout = 5000
 EnableAsyncReadings = true
 AsyncBufferSize = 16
 
 [Registry]
-Type = "consul"
 Host = "edgex-core-consul"
 Port = 8500
 CheckInterval = "10s"
 FailLimit = 3
 FailWaitTime = 10
+Type = "consul"
 
 [Logging]
 EnableRemote = true
-File = "./device-virtual.log"
+File = "/edgex/logs/device-zigbee.log"
 
 [Writable]
-LogLevel = 'INFO'
+LogLevel = "INFO"
 
 [Clients]
   [Clients.Data]
@@ -44,6 +44,9 @@ LogLevel = 'INFO'
   Host = "edgex-support-logging"
   Port = 48061
 
+[Driver]
+  SerialPort = "/dev/ttyUSB0"
+  
 [Device]
   DataTransform = true
   InitCmd = ""
@@ -53,85 +56,3 @@ LogLevel = 'INFO'
   RemoveCmd = ""
   RemoveCmdArgs = ""
   ProfilesDir = "./res"
-
-# Pre-define Devices
-[[DeviceList]]
-  Name = "Random-Boolean-Device"
-  Profile = "Random-Boolean-Device"
-  Description = "Example of Device Virtual"
-  Labels = [ "device-virtual-example" ]
-  [DeviceList.Protocols]
-    [DeviceList.Protocols.other]
-      Address = "device-virtual-bool-01"
-      Port = "300"
-  [[DeviceList.AutoEvents]]
-    Frequency = "10s"
-    OnChange = false
-    Resource = "Bool"
-[[DeviceList]]
-  Name = "Random-Integer-Device"
-  Profile = "Random-Integer-Device"
-  Description = "Example of Device Virtual"
-  Labels = [ "device-virtual-example" ]
-  [DeviceList.Protocols]
-    [DeviceList.Protocols.other]
-      Address = "device-virtual-int-01"
-      Protocol = "300"
-  [[DeviceList.AutoEvents]]
-    Frequency = "15s"
-    OnChange = false
-    Resource = "Int8"
-  [[DeviceList.AutoEvents]]
-    Frequency = "15s"
-    OnChange = false
-    Resource = "Int16"
-  [[DeviceList.AutoEvents]]
-    Frequency = "15s"
-    OnChange = false
-    Resource = "Int32"
-  [[DeviceList.AutoEvents]]
-    Frequency = "15s"
-    OnChange = false
-    Resource = "Int64"
-[[DeviceList]]
-  Name = "Random-UnsignedInteger-Device"
-  Profile = "Random-UnsignedInteger-Device"
-  Description = "Example of Device Virtual"
-  Labels = [ "device-virtual-example" ]
-  [DeviceList.Protocols]
-    [DeviceList.Protocols.other]
-      Address = "device-virtual-uint-01"
-      Protocol = "300"
-  [[DeviceList.AutoEvents]]
-    Frequency = "20s"
-    OnChange = false
-    Resource = "Uint8"
-  [[DeviceList.AutoEvents]]
-    Frequency = "20s"
-    OnChange = false
-    Resource = "Uint16"
-  [[DeviceList.AutoEvents]]
-    Frequency = "20s"
-    OnChange = false
-    Resource = "Uint32"
-  [[DeviceList.AutoEvents]]
-    Frequency = "20s"
-    OnChange = false
-    Resource = "Uint64"
-[[DeviceList]]
-  Name = "Random-Float-Device"
-  Profile = "Random-Float-Device"
-  Description = "Example of Device Virtual"
-  Labels = [ "device-virtual-example" ]
-  [DeviceList.Protocols]
-    [DeviceList.Protocols.other]
-      Address = "device-virtual-float-01"
-      Protocol = "300"
-  [[DeviceList.AutoEvents]]
-    Frequency = "30s"
-    OnChange = false
-    Resource = "Float32"
-  [[DeviceList.AutoEvents]]
-    Frequency = "30s"
-    OnChange = false
-    Resource = "Float64"

@@ -31,6 +31,7 @@ const (
 	nameProfileID   = "profileID"
 	nameClusterID   = "clusterID"
 	nameAttributeID = "attributeID"
+	nameValueType   = "valueType"
 
 	managerProfileNameConst = "ManagerProfile"
 )
@@ -62,9 +63,10 @@ type ObjectCache interface {
 }
 
 type AttributeInfo struct {
-	ProfileID   int16 `json:"pro"`
-	ClusterID   int16 `json:"clu"`
-	AttributeID int16 `json:"att"`
+	ProfileID   uint16 `json:"pro"`
+	ClusterID   uint16 `json:"clu"`
+	AttributeID uint16 `json:"att"`
+	ValueType   uint8  `json:"vltp"`
 }
 
 type AttributeValue struct {
@@ -78,28 +80,18 @@ type ResourceValue struct {
 }
 
 type ObjectAddress struct {
-	Address  int16 `json:"addr"`
-	Type     int8  `json:"type"`
-	Endpoint int8  `json:"endp"`
+	Address  uint16 `json:"addr"`
+	Type     uint8  `json:"type"`
+	Endpoint uint8  `json:"endp"`
 }
 type AddressEUI64 struct {
-	MAC int64 `json:"MAC"`
-	PAN int16 `json:"PAN"`
+	MAC string `json:"MAC,omitempty"`
+	PAN uint16 `json:"PAN,omitempty"`
 }
 type ObjectInfo struct {
 	AddressEUI64
 	ObjectAddress
 }
-
-// type PacketNodeStruct struct {
-// 	ObjectAddress
-// 	AtributeList []AttributeValue `json:"atts,omitempty"`
-// }
-
-// type PacketEdgeStruct struct {
-// 	ObjectID     string
-// 	ResourceList []ResourceValue `json:"ress,omitempty"`
-// }
 
 func getObjectAddressFromProtocol(p map[string]models.ProtocolProperties) (ob ObjectAddress, ok bool) {
 	pp, ok := p[nameNetworkProtocol]
@@ -110,31 +102,31 @@ func getObjectAddressFromProtocol(p map[string]models.ProtocolProperties) (ob Ob
 	if !ok {
 		return
 	}
-	addrint, err := strconv.ParseInt(addr, 10, 16)
+	addrint, err := strconv.ParseUint(addr, 10, 16)
 	if err != nil {
 		return ob, false
 	}
-	addr16 := int16(addrint)
+	addr16 := uint16(addrint)
 
 	tp, ok := pp[nameTypeProperty]
 	if !ok {
 		return
 	}
-	tpint, err := strconv.ParseInt(tp, 10, 8)
+	tpint, err := strconv.ParseUint(tp, 10, 8)
 	if err != nil {
 		return ob, false
 	}
-	tp8 := int8(tpint)
+	tp8 := uint8(tpint)
 
 	ep, ok := pp[nameEndpointProperty]
 	if !ok {
 		return
 	}
-	epint, err := strconv.ParseInt(ep, 10, 16)
+	epint, err := strconv.ParseUint(ep, 10, 16)
 	if err != nil {
 		return ob, false
 	}
-	ep8 := int8(epint)
+	ep8 := uint8(epint)
 
 	ob.Address = addr16
 	ob.Endpoint = ep8
@@ -157,17 +149,13 @@ func getObjectInfoFromProtocol(p map[string]models.ProtocolProperties) (ob Objec
 		return
 	}
 
-	mac64, err := strconv.ParseInt(mac, 10, 64)
+	pan64, err := strconv.ParseUint(pan, 10, 16)
 	if err != nil {
 		return ob, false
 	}
-	pan64, err := strconv.ParseInt(pan, 10, 16)
-	if err != nil {
-		return ob, false
-	}
-	pan16 := int16(pan64)
+	pan16 := uint16(pan64)
 
-	ob.MAC = mac64
+	ob.MAC = mac
 	ob.PAN = pan16
 	return ob, true
 }
@@ -177,35 +165,47 @@ func getAttributeFromMap(att map[string]string) (attInfo AttributeInfo, ok bool)
 	if !ok {
 		return
 	}
-	profileint, err := strconv.ParseInt(profile, 10, 16)
+	profileint, err := strconv.ParseUint(profile, 10, 16)
 	if err != nil {
 		return attInfo, false
 	}
-	profile16 := int16(profileint)
+	profile16 := uint16(profileint)
 
 	cluster, ok := att[nameClusterID]
 	if !ok {
 		return
 	}
-	clusterint, err := strconv.ParseInt(cluster, 10, 16)
+	clusterint, err := strconv.ParseUint(cluster, 10, 16)
 	if err != nil {
 		return attInfo, false
 	}
-	cluster16 := int16(clusterint)
+	cluster16 := uint16(clusterint)
 
 	at, ok := att[nameAttributeID]
 	if !ok {
 		return
 	}
-	atint, err := strconv.ParseInt(at, 10, 16)
+	atint, err := strconv.ParseUint(at, 10, 16)
 	if err != nil {
 		return attInfo, false
 	}
-	at16 := int16(atint)
+	at16 := uint16(atint)
+
+	valueType, ok := att[nameValueType]
+	if !ok {
+		return
+	}
+	typeInt, err := strconv.ParseUint(valueType, 10, 8)
+	if err != nil {
+		return attInfo, false
+	}
+	vltp := uint8(typeInt)
 
 	attInfo.ProfileID = profile16
 	attInfo.ClusterID = cluster16
 	attInfo.AttributeID = at16
+	attInfo.ValueType = vltp
+
 	return attInfo, true
 }
 

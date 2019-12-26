@@ -7,16 +7,16 @@
 package main
 
 import (
+	device_zigbee "github.com/device-zigbee"
+	"github.com/device-zigbee/driver"
 	"github.com/edgexfoundry/device-sdk-go/pkg/startup"
-	device "github.com/my-ds"
-	"github.com/my-ds/driver"
 )
 
 const (
-	serviceName string = "my-zigbee"
+	serviceName string = "device-zigbee"
 )
 
 func main() {
 	d := driver.NewProtocolDriver()
-	startup.Bootstrap(serviceName, device.Version, d)
+	startup.Bootstrap(serviceName, device_zigbee.Version, d)
 }

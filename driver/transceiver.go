@@ -13,10 +13,10 @@ var chanSend chan bool
 var serialPort *serial.Port
 
 // TransceiverInit : duoc goi khi khoi tao DS
-func TransceiverInit() (err error) {
+func TransceiverInit(port string) (err error) {
 	chanSend = make(chan bool, sizeChannel)
 	// setup uart
-	configSerial := &serial.Config{Name: "/dev/ttyUSB0", Baud: 115200}
+	configSerial := &serial.Config{Name: port, Baud: 9600}
 	serialPort, err = serial.OpenPort(configSerial)
 	if err != nil {
 		return err
@@ -27,6 +27,7 @@ func TransceiverInit() (err error) {
 	return nil
 }
 
+// TransceiverClose : close serial
 func TransceiverClose() {
 	serialPort.Close()
 }
@@ -64,13 +65,14 @@ func receiverUartRoutine() {
 	for {
 		raw, l = receiverUart()
 		if l > 0 {
+			fmt.Println("rx:" + string(raw))
 			go sendRXUartArrayToRepo(raw, l)
 		}
 	}
 }
 
 func sendUart(rawData []byte, lenght int16, chanSendErr chan error) {
-	fmt.Println("send raw data:", string(rawData), " - len=", lenght)
+	fmt.Println("send raw data:", string(rawData), " - len=", lenght, "\n")
 	serialPort.Flush()
 	_, err := serialPort.Write(rawData)
 	<-chanSend
@@ -88,6 +90,7 @@ func receiverUart() ([]byte, int16) {
 	cmd := make([]byte, 1)
 	crc := make([]byte, 1)
 	var checkCRC byte
+	data := make([]byte, 1)
 
 	for {
 		// receive Header 1 byte:
@@ -105,13 +108,24 @@ func receiverUart() ([]byte, int16) {
 		}
 
 		// receive Lenght 2 byte
-		n, err := serialPort.Read(lenghtBytes)
+		n, err = serialPort.Read(data)
 		if err != nil {
 			return nil, 0
 		}
-		if n < 2 {
+		if n < 1 {
 			continue
 		}
+		lenghtBytes[0] = data[0]
+
+		n, err = serialPort.Read(data)
+		if err != nil {
+			return nil, 0
+		}
+		if n < 1 {
+			continue
+		}
+		lenghtBytes[1] = data[0]
+
 		lenghtPayload = (int16(lenghtBytes[0]) << 8) | int16(lenghtBytes[1])
 		if lenghtPayload <= 1 {
 			continue
@@ -125,21 +139,21 @@ func receiverUart() ([]byte, int16) {
 		if n < 1 {
 			continue
 		}
-		if !checkVaildCmd(int8(cmd[0])) {
-			continue
-		}
+		// if !checkVaildCmd(int8(cmd[0])) {
+		// 	continue
+		// }
 
 		// reset checkCRC
-		checkCRC = cmd[0]
+		checkCRC = headerConst + lenghtBytes[0] + lenghtBytes[1] + cmd[0]
 
 		// receive payload
 		payloadBytes := make([]byte, lenghtPayload-1)
-		n, err = serialPort.Read(payloadBytes)
-		if err != nil {
-			return nil, 0
-		}
-		if n != int(lenghtPayload-1) {
-			continue
+		for i := range payloadBytes {
+			n, err = serialPort.Read(data)
+			if err != nil || n < 1 {
+				return nil, 0
+			}
+			payloadBytes[i] = data[0]
 		}
 
 		// receive CRC
@@ -150,7 +164,6 @@ func receiverUart() ([]byte, int16) {
 		if n < 1 {
 			continue
 		}
-
 		// caculate CRC:
 		for _, c := range payloadBytes {
 			checkCRC += c

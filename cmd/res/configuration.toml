@@ -18,7 +18,7 @@ FailWaitTime = 10
 
 [Logging]
 EnableRemote = false
-File = "./my-zigbee.log"
+File = "./device-zigbee.log"
 
 [Writable]
 LogLevel = 'INFO'
@@ -44,6 +44,9 @@ LogLevel = 'INFO'
   Host = "localhost"
   Port = 48061
 
+[Driver]
+  SerialPort = "/dev/ttyUSB0"
+  
 [Device]
   DataTransform = true
   InitCmd = ""

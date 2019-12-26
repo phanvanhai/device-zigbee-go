@@ -16,8 +16,8 @@ var once sync.Once
 var rp *repoStruct
 
 type ContentRepoStruct struct {
-	Packet interface{}
-	Cmd    int8
+	Packet interface{} `json:"content"`
+	Cmd    int8        `json:"cmd"`
 }
 
 type repoStruct struct {

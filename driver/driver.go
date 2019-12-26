@@ -7,13 +7,15 @@
 package driver
 
 import (
+	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/my-ds/driver/packet"
+	"github.com/device-zigbee/driver/packet"
 
 	sdk "github.com/edgexfoundry/device-sdk-go"
 	sdkModel "github.com/edgexfoundry/device-sdk-go/pkg/models"
@@ -47,9 +49,74 @@ func (d *Driver) Initialize(lc logger.LoggingClient, asyncCh chan<- *sdkModel.As
 	d.AsyncCh = asyncCh
 	Cache()
 	packet.Repo()
-	err := TransceiverInit()
+	driver := sdk.DriverConfigs()
+	port, ok := driver["SerialPort"]
+	if !ok {
+		return fmt.Errorf("Khong chi dinh SerialPort")
+	}
+	err := TransceiverInit(port)
 
 	return err
+}
+
+// command of Master: {
+//	"ManagerObjectName"
+//	"ManagerCommandName"
+//	"ManagerMethod"
+//	"ManagerBody"
+// }
+// virtual manager DS
+const (
+	managerSubcribe     = "Subscribe"
+	mangerSchedule      = "Schedule"
+	managerRemoveItself = "RemoveItself"
+	managerPutMethod    = "PUT"
+	managerDeleteMethod = "DELETE"
+)
+
+var managerSubcribeAttInfo = AttributeInfo{
+	ProfileID:   260,
+	ClusterID:   64528,
+	AttributeID: 17,
+	ValueType:   0,
+}
+var mangerScheduleAttInfo = AttributeInfo{
+	ProfileID:   260,
+	ClusterID:   64528,
+	AttributeID: 18,
+	ValueType:   0,
+}
+
+type action struct {
+	Command string `json:"command,omitempty"`
+	Body    string `json:"body,omitempty"`
+}
+type contentElementType struct {
+	OwnerID    string `json:"ownerID,omitempty"`
+	ObjectType string `json:"type,omitempty"`
+	ElementID  string `json:"elementID,omitempty"`
+	action
+}
+
+// SubscribeStructZigbee : in Value of CommandFrame
+type SubscribeStructZigbee struct {
+	ObjectAddress // owerAddr
+	AttributeValue
+}
+
+type contentScheduleType struct {
+	OwnerID      string `json:"ownerID,omitempty"`
+	ScheduleName string `json:"name,omitempty"`
+	Time         int32  `json:"time,omitempty"`
+	action
+}
+
+// ScheduleStructZigbee :
+type ScheduleStructZigbee struct {
+	ObjectAddress
+	Name       string `json:"name"` // maxLen = 16
+	DateHoMuSe int32  `json:"sche"` // date: bit 7 == isRepeat bit0->6 <-> Sun->Sat, = 0x0000 -> = Delete
+	AttributeValue
 }
 
 // HandleReadCommands passes a slice of CommandRequest struct each representing
@@ -105,7 +172,7 @@ func (d *Driver) handleReadCommandRequest(objectName string, req sdkModel.Comman
 		driver.Logger.Error(err.Error())
 		return result, err
 	}
-	driver.Logger.Info(fmt.Sprintf("Send command: %v", contentRepo))
+	driver.Logger.Info(fmt.Sprintf("Send command: %+v", contentRepo))
 
 	nameRepo := packet.Repo().GetRepoNameByID(idObject)
 	responseRaw, ok := packet.Repo().GetFromRepoAfterResetWithTime(nameRepo, 100, 50)
@@ -113,8 +180,15 @@ func (d *Driver) handleReadCommandRequest(objectName string, req sdkModel.Comman
 		return result, fmt.Errorf("Loi nhan phan hoi")
 	}
 
-	driver.Logger.Info(fmt.Sprintf("Parse command response: %v", responseRaw))
+	driver.Logger.Info(fmt.Sprintf("Parse command response: %+v", responseRaw))
 	respByte, _ := json.Marshal(responseRaw)
+	var responseRepo packet.ContentRepoStruct
+	err = json.Unmarshal(respByte, &responseRepo)
+	if err != nil {
+		return result, fmt.Errorf("Loi phan tich phan hoi")
+	}
+
+	respByte, _ = json.Marshal(responseRepo.Packet)
 	var response ResponseCommonFrame
 
 	err = json.Unmarshal(respByte, &response)
@@ -133,67 +207,112 @@ func (d *Driver) handleReadCommandRequest(objectName string, req sdkModel.Comman
 	if err != nil {
 		return result, err
 	}
-	driver.Logger.Info(fmt.Sprintf("Get command finished: %v", result))
+	driver.Logger.Info(fmt.Sprintf("Get command finished: %+v", result))
 
 	return result, err
 }
 
-// command of Master: {
-//	"ManagerObjectName"
-//	"ManagerCommandName"
-//	"ManagerMethod"
-//	"ManagerBody"
-// }
-// virtual manager DS
-const (
-	managerSubcribe     = "Subscribe"
-	mangerSchedule      = "Schedule"
-	managerRemoveItself = "RemoveItself"
-	managerPutMethod    = "PUT"
-	managerDeleteMethod = "DELETE"
-)
+func getBytes(data interface{}) ([]byte, error) {
 
-var managerSubcribeAttInfo = AttributeInfo{
-	ProfileID:   0x1234,
-	ClusterID:   0x0001,
-	AttributeID: 0x00001,
-}
-var mangerScheduleAttInfo = AttributeInfo{
-	ProfileID:   0x1234,
-	ClusterID:   0x0001,
-	AttributeID: 0x00001,
-}
-
-type action struct {
-	Command string `json:"command,omitempty"`
-	Body    string `json:"body,omitempty"`
-}
-type contentElementType struct {
-	OwnerId    string `json:"ownerID,omitempty"`
-	ObjectType string `json:"type,omitempty"`
-	ElementId  string `json:"elementID,omitempty"`
-	action
-}
-
-// SubscribeStructZigbee : in Value of CommandFrame
-type SubscribeStructZigbee struct {
-	ObjectAddress // owerAddr
-	AttributeValue
+	switch v := data.(type) {
+	case int:
+		nv := int32(v)
+		buf := new(bytes.Buffer)
+		err := binary.Write(buf, binary.BigEndian, nv)
+		if err != nil {
+			fmt.Println("binary.Write failed:", err)
+		}
+		return buf.Bytes(), nil
+	case string:
+		return []byte(v), nil
+	case bool:
+		r := make([]byte, 1)
+		if v == true {
+			r[0] = 1
+		} else {
+			r[0] = 0
+		}
+		return r, nil
+	case int8:
+		r := make([]byte, 1)
+		r[0] = byte(v)
+		return r, nil
+	case uint8:
+		r := make([]byte, 1)
+		r[0] = byte(v)
+		return r, nil
+	default:
+		buf := new(bytes.Buffer)
+		err := binary.Write(buf, binary.BigEndian, v)
+		if err != nil {
+			fmt.Println("binary.Write failed:", err)
+		}
+		return buf.Bytes(), nil
+	}
 }
 
-type contentScheduleType struct {
-	OwnerId      string `json:"ownerID,omitempty"`
-	ScheduleName string `json:"name,omitempty"`
-	Time         int32  `json:"time,omitempty"`
-	action
+func convertScheduleStructZigbeeToBinary(from ScheduleStructZigbee) []byte {
+	result := make([]byte, (2 + 1 + 1 + 18 + 4 + 2 + 2 + 2 + 1 + 8))
+	var bValue []byte
+
+	bValue, _ = getBytes(from.Value)
+	dValue, _ := getBytes(from.DateHoMuSe)
+
+	result[0] = byte(from.Address >> 8)
+	result[1] = byte(from.Address & 0x00FF)
+	result[2] = byte(from.Type)
+	result[3] = byte(from.Endpoint)
+
+	// result = append(result, ([]byte(from.Name))...)
+	copy(result[4:], ([]byte(from.Name)))
+	copy(result[22:], dValue)
+
+	result[26] = byte(from.ProfileID >> 8)
+	result[27] = byte(from.ProfileID & 0x00FF)
+	result[28] = byte(from.ClusterID >> 8)
+	result[29] = byte(from.ClusterID & 0x00FF)
+	result[30] = byte(from.AttributeID >> 8)
+	result[31] = byte(from.AttributeID & 0x00FF)
+	result[32] = byte(from.ValueType)
+	copy(result[33:], bValue)
+	return result
 }
 
-// ScheduleStructZigbee :
-type ScheduleStructZigbee struct {
-	ObjectAddress
-	Name       string `json:"name"` // maxLen = 16
-	DateHoMuSe int32  `json:"sche"` // date: bit 7 == isRepeat bit0->6 <-> Sun->Sat, = 0x0000 -> = Delete
-	AttributeValue
+func convertSubscribeStructZigbeeToBinary(from SubscribeStructZigbee, attNil bool) []byte {
+	if attNil {
+		result := make([]byte, (2 + 1 + 1))
+		result[0] = byte(from.Address >> 8)
+		result[1] = byte(from.Address & 0x00FF)
+		result[2] = byte(from.Type)
+		result[3] = byte(from.Endpoint)
+		return result
+	}
+	result := make([]byte, (2 + 1 + 1 + 2 + 2 + 2 + 1 + 8))
+	var bValue []byte
+
+	bValue, _ = getBytes(from.Value)
+
+	result[0] = byte(from.Address >> 8)
+	result[1] = byte(from.Address & 0x00FF)
+	result[2] = byte(from.Type)
+	result[3] = byte(from.Endpoint)
+	result[4] = byte(from.ProfileID >> 8)
+	result[5] = byte(from.ProfileID & 0x00FF)
+	result[6] = byte(from.ClusterID >> 8)
+	result[7] = byte(from.ClusterID & 0x00FF)
+	result[8] = byte(from.AttributeID >> 8)
+	result[9] = byte(from.AttributeID & 0x00FF)
+	result[10] = byte(from.ValueType)
+	copy(result[11:], bValue)
+	return result
+}
+
+func convertByteToUint8(in []byte) []uint16 {
+	out := make([]uint16, len(in))
+	for i, b := range in {
+		out[i] = uint16(b)
+	}
+	return out
 }
 
 func (d *Driver) handleMasterRequest(reqs []sdkModel.CommandRequest, params []*sdkModel.CommandValue) error {
@@ -255,22 +374,37 @@ func (d *Driver) handleMasterRequest(reqs []sdkModel.CommandRequest, params []*s
 			return err
 		}
 
-		addrInfoOwer, ok := Cache().ConvertIDToObjectInfo(content.OwnerId)
+		addrInfoOwer, ok := Cache().ConvertIDToObjectInfo(content.OwnerID)
 		if !ok {
-			driver.Logger.Info("Khong ton tai doi tuong:" + content.OwnerId)
-			return fmt.Errorf("Khong ton tai doi tuong:" + content.OwnerId)
+			driver.Logger.Info("Khong ton tai doi tuong:" + content.OwnerID)
+			return fmt.Errorf("Khong ton tai doi tuong:" + content.OwnerID)
 		}
 
 		var newreqs []sdkModel.CommandRequest
 		var newparams []*sdkModel.CommandValue
 		var attvl = AttributeValue{}
-		if content.ObjectType == SCENARIOTYPE {
-			newreqs, newparams, err = execWriteCmd(d, object, cmName, body)
+		var attvlNil = true
+
+		ownerName, ok := Cache().ConvertIDToNameObject(content.OwnerID)
+		if !ok {
+			driver.Logger.Info("Khong ton tai doi tuong")
+			return fmt.Errorf("Khong ton tai doi tuong")
+		}
+		objectOwner, err := service.GetDeviceByName(ownerName)
+		if err != nil {
+			return err
+		}
+
+		if labelsType(objectOwner.Labels).getType() == SCENARIOTYPE {
+			attvlNil = false
+			fmt.Println("driver 399: vao scenario")
+			newreqs, newparams, err = execWriteCmd(d, object, content.Command, content.Body)
 			if err != nil {
 				driver.Logger.Info(fmt.Sprintf("chuyen doi lenh loi: %v", err))
 				return err
 			}
-
+			v, e := newparams[0].Int8Value()
+			fmt.Printf("driver 401: Int8Value=%d-%v\n", v, e)
 			// hien tai chi ho tro 1 command - value
 			att, ok := Cache().ConvertResToAtt(newreqs[0].DeviceResourceName)
 			if !ok {
@@ -278,6 +412,7 @@ func (d *Driver) handleMasterRequest(reqs []sdkModel.CommandRequest, params []*s
 				return fmt.Errorf("Khong tim thay Attribute Zigbee cho:" + objectName)
 			}
 			attValue, err := newCommandValue(newreqs[0].Type, newparams[0])
+			fmt.Printf("driver 409:%+v\n", attValue)
 			if err != nil {
 				driver.Logger.Info("Doc gia tri Command Value loi")
 				return fmt.Errorf("Doc gia tri Command Value loi")
@@ -294,12 +429,13 @@ func (d *Driver) handleMasterRequest(reqs []sdkModel.CommandRequest, params []*s
 			AttributeValue: attvl,
 		}
 
-		attvlByte, err := json.Marshal(valTypeSubscribe)
-		if err != nil {
-			driver.Logger.Info(fmt.Sprintf("Loi phan tich Json:%v", err))
-			return err
-		}
-
+		// attvlByte, err := json.Marshal(valTypeSubscribe)
+		// if err != nil {
+		// 	driver.Logger.Info(fmt.Sprintf("Loi phan tich Json:%v", err))
+		// 	return err
+		// }
+		attvlByte := convertSubscribeStructZigbeeToBinary(valTypeSubscribe, attvlNil)
+		driver.Logger.Info(fmt.Sprintf("attvlByte:%v", attvlByte))
 		cmFrame = CommandFrame{
 			ObjectAddress: objectInfo.ObjectAddress,
 			CommandID:     commandID,
@@ -315,17 +451,17 @@ func (d *Driver) handleMasterRequest(reqs []sdkModel.CommandRequest, params []*s
 			return err
 		}
 
-		addrInfoOwer, ok := Cache().ConvertIDToObjectInfo(content.OwnerId)
+		addrInfoOwer, ok := Cache().ConvertIDToObjectInfo(content.OwnerID)
 		if !ok {
-			driver.Logger.Info("Khong ton tai doi tuong:" + content.OwnerId)
-			return fmt.Errorf("Khong ton tai doi tuong:" + content.OwnerId)
+			driver.Logger.Info("Khong ton tai doi tuong:" + content.OwnerID)
+			return fmt.Errorf("Khong ton tai doi tuong:" + content.OwnerID)
 		}
 
 		var newreqs []sdkModel.CommandRequest
 		var newparams []*sdkModel.CommandValue
 		var attvl = AttributeValue{}
 
-		newreqs, newparams, err = execWriteCmd(d, object, cmName, body)
+		newreqs, newparams, err = execWriteCmd(d, object, content.Command, content.Body)
 		if err != nil {
 			driver.Logger.Info(fmt.Sprintf("chuyen doi lenh loi: %v", err))
 			return err
@@ -342,6 +478,8 @@ func (d *Driver) handleMasterRequest(reqs []sdkModel.CommandRequest, params []*s
 			driver.Logger.Info("Doc gia tri Command Value loi")
 			return fmt.Errorf("Doc gia tri Command Value loi")
 		}
+		// TODO: xac dinh loai gia tri cho Value
+		// Hien tai co dinh type(Value) = uint8_t
 		attvl = AttributeValue{
 			AttributeInfo: att,
 			Value:         attValue,
@@ -353,11 +491,13 @@ func (d *Driver) handleMasterRequest(reqs []sdkModel.CommandRequest, params []*s
 			DateHoMuSe:     content.Time,
 			AttributeValue: attvl,
 		}
-		attvlByte, err := json.Marshal(valTypeSchedule)
-		if err != nil {
-			driver.Logger.Info(fmt.Sprintf("Loi phan tich Json:%v", err))
-			return err
-		}
+		// attvlByte, err := json.Marshal(valTypeSchedule)
+		// if err != nil {
+		// 	driver.Logger.Info(fmt.Sprintf("Loi phan tich Json:%v", err))
+		// 	return err
+		// }
+		attvlByte := convertScheduleStructZigbeeToBinary(valTypeSchedule)
+		driver.Logger.Info(fmt.Sprintf("attvlByte:%v", attvlByte))
 
 		cmFrame = CommandFrame{
 			ObjectAddress: objectInfo.ObjectAddress,
@@ -382,22 +522,30 @@ func (d *Driver) handleMasterRequest(reqs []sdkModel.CommandRequest, params []*s
 	}
 	nameRepo := packet.Repo().GetRepoNameByID(objectID)
 
-	driver.Logger.Info(fmt.Sprintf("gui vao Repo: %s : contentRepo= %v", nameRepo, contentRepo))
+	driver.Logger.Info(fmt.Sprintf("gui vao Repo: %s : contentRepo= %+v", nameRepo, contentRepo))
 
 	_, err = SendUartPacket(contentRepo, 5000)
 	if err != nil {
 		driver.Logger.Error(err.Error())
 		return err
 	}
-	driver.Logger.Info(fmt.Sprintf("Send command: %v", contentRepo))
+	driver.Logger.Info(fmt.Sprintf("Send command: %+v", contentRepo))
 
 	responseRaw, ok := packet.Repo().GetFromRepoAfterResetWithTime(nameRepo, 100, 50)
 	if !ok {
-		return fmt.Errorf("Loi nhan phan hoi")
+		driver.Logger.Info("Loi khong nhan duoc phan hoi")
+		return fmt.Errorf("Loi khong nhan duoc phan hoi")
 	}
 
-	driver.Logger.Info(fmt.Sprintf("Parse command response: %v", responseRaw))
+	driver.Logger.Info(fmt.Sprintf("Parse command response: %+v", responseRaw))
 	respByte, _ := json.Marshal(responseRaw)
+	var responseRepo packet.ContentRepoStruct
+	err = json.Unmarshal(respByte, &responseRepo)
+	if err != nil {
+		return fmt.Errorf("Loi phan tich phan hoi")
+	}
+
+	respByte, _ = json.Marshal(responseRepo.Packet)
 	var response ResponseCommonFrame
 
 	err = json.Unmarshal(respByte, &response)
@@ -476,7 +624,7 @@ func (d *Driver) handleWriteCommandRequest(objectName string, req sdkModel.Comma
 		driver.Logger.Error(err.Error())
 		return err
 	}
-	driver.Logger.Info(fmt.Sprintf("Send command: %v", contentRepo))
+	// driver.Logger.Info(fmt.Sprintf("Send command: %+v", contentRepo))
 
 	nameRepo := packet.Repo().GetRepoNameByID(idObject)
 	responseRaw, ok := packet.Repo().GetFromRepoAfterResetWithTime(nameRepo, 100, 50)
@@ -484,8 +632,15 @@ func (d *Driver) handleWriteCommandRequest(objectName string, req sdkModel.Comma
 		return fmt.Errorf("Loi nhan phan hoi")
 	}
 
-	driver.Logger.Info(fmt.Sprintf("Parse command response: %v", responseRaw))
+	driver.Logger.Info(fmt.Sprintf("Parse command response: %+v", responseRaw))
 	respByte, _ := json.Marshal(responseRaw)
+	var responseRepo packet.ContentRepoStruct
+	err = json.Unmarshal(respByte, &responseRepo)
+	if err != nil {
+		return fmt.Errorf("Loi phan tich phan hoi")
+	}
+
+	respByte, _ = json.Marshal(responseRepo.Packet)
 	var response ResponseCommonFrame
 
 	err = json.Unmarshal(respByte, &response)
@@ -668,6 +823,11 @@ func createDeleteObjectContentRepo(addr ObjectAddress) (result ContentRepo, repo
 	return
 }
 
+const (
+	// PROTOCOLSNETWORKNAME :
+	PROTOCOLSNETWORKNAME = "Network"
+)
+
 // AddDevice is a callback function that is invoked
 // when a new Device associated with this Device Service is added
 func (d *Driver) AddDevice(deviceName string, protocols map[string]models.ProtocolProperties, adminState models.AdminState) error {
@@ -677,42 +837,68 @@ func (d *Driver) AddDevice(deviceName string, protocols map[string]models.Protoc
 	if err != nil {
 		return err
 	}
+
+	Cache().UpdateObject(device)
+
+	var mac string
+	var pan uint16
+	if len(device.Protocols) > 0 {
+		pp, ok := device.Protocols[PROTOCOLSNETWORKNAME]
+		if !ok {
+			driver.Logger.Error(fmt.Sprintf("Khong co thong tin vat ly cua thiet bi"))
+			return fmt.Errorf("Khong co thong tin vat ly cua thiet bi")
+		}
+		strMac, _ := pp["MAC"]
+		strPan, _ := pp["PAN"]
+		// umac, _ := strconv.ParseUint(strMac, 10, 64)
+		upan, _ := strconv.ParseUint(strPan, 10, 16)
+		mac = strMac
+		pan = uint16(upan)
+	}
 	if labelsType(device.Labels).isInitializied() == false {
 		// provision
 		var frame ProvisonFrame
 		if labelsType(device.Labels).getType() == DEVICETYPE {
+
 			frame = ProvisonFrame{
 				AddressEUI64: AddressEUI64{
-					MAC: 0x1234567812345678,
-					PAN: 0x1234,
+					MAC: mac,
+					PAN: pan,
 				},
-				NameDevice: "abc",
+				NameDevice: deviceName,
 			}
 		} else {
 			frame = ProvisonFrame{
 				AddressEUI64: AddressEUI64{
-					MAC: 0,
-					PAN: 0x1234,
+					MAC: "00000000",
+					PAN: pan,
 				},
-				NameDevice: "",
+				NameDevice: deviceName,
 			}
 		}
 
 		repo, repoName := createProvisionObjectContentRepo(frame)
-		timeused, err := SendUartPacket(repo, 4000) // gui trong 4s
+		_, err := SendUartPacket(repo, 8000) // gui trong 4s
 		if err != nil {
 			driver.Logger.Error(err.Error())
 			return err
 		}
-		driver.Logger.Info(fmt.Sprintf("Send request add object: %v", repo))
+		driver.Logger.Info(fmt.Sprintf("Send request add object: %+v", repo))
 
-		responseRaw, ok := packet.Repo().GetFromRepoAfterResetWithTime(repoName, int32(4000-timeused), 1)
+		responseRaw, ok := packet.Repo().GetFromRepoAfterResetWithTime(repoName, 20000, 1)
 		if !ok {
 			return fmt.Errorf("Loi nhan phan hoi")
 		}
 
-		driver.Logger.Info(fmt.Sprintf("Parse command response: %v", responseRaw))
+		driver.Logger.Info(fmt.Sprintf("Parse command response: %+v", responseRaw))
 		respByte, _ := json.Marshal(responseRaw)
+		var responseRepo packet.ContentRepoStruct
+		err = json.Unmarshal(respByte, &responseRepo)
+		if err != nil {
+			return fmt.Errorf("Loi phan tich phan hoi")
+		}
+
+		respByte, _ = json.Marshal(responseRepo.Packet)
 		var response ResponseCommonFrame
 
 		err = json.Unmarshal(respByte, &response)
@@ -720,7 +906,7 @@ func (d *Driver) AddDevice(deviceName string, protocols map[string]models.Protoc
 			return fmt.Errorf("Loi phan tich phan hoi")
 		}
 		if response.StatusResponse != 0x00 {
-			driver.Logger.Info(fmt.Sprintf("Status response: %v", response.StatusResponse))
+			driver.Logger.Info(fmt.Sprintf("Status response: %+v", response.StatusResponse))
 			return fmt.Errorf("Yeu cau thuc hien khong thanh cong")
 		}
 		objectInfo := response.ObjectInfo
@@ -728,20 +914,18 @@ func (d *Driver) AddDevice(deviceName string, protocols map[string]models.Protoc
 		if !ok {
 			nw = make(map[string]string)
 		}
-		nw[nameMACProperty] = strconv.FormatInt(objectInfo.MAC, 10)
-		nw[namePANProperty] = strconv.FormatInt(int64(objectInfo.PAN), 10)
-		nw[nameAddressProperty] = strconv.FormatInt(int64(objectInfo.Address), 10)
-		nw[nameEndpointProperty] = strconv.FormatInt(int64(objectInfo.Type), 10)
-		nw[nameTypeProperty] = strconv.FormatInt(int64(objectInfo.Endpoint), 10)
+		nw[nameMACProperty] = objectInfo.MAC
+		nw[namePANProperty] = strconv.FormatUint(uint64(objectInfo.PAN), 10)
+		nw[nameAddressProperty] = strconv.FormatUint(uint64(objectInfo.Address), 10)
+		nw[nameEndpointProperty] = strconv.FormatUint(uint64(objectInfo.Endpoint), 10)
+		nw[nameTypeProperty] = strconv.FormatUint(uint64(objectInfo.Type), 10)
 		device.Protocols[nameNetworkProtocol] = nw
 
 		if response.Description != "" {
 			device.Description = response.Description
 		}
-		service.UpdateDevice(device)
 		labelsType(device.Labels).setInitializied()
-	} else {
-		Cache().UpdateObject(device)
+		service.UpdateDevice(device)
 	}
 
 	return nil
@@ -750,7 +934,7 @@ func (d *Driver) AddDevice(deviceName string, protocols map[string]models.Protoc
 // UpdateDevice is a callback function that is invoked
 // when a Device associated with this Device Service is updated
 func (d *Driver) UpdateDevice(deviceName string, protocols map[string]models.ProtocolProperties, adminState models.AdminState) error {
-	d.Logger.Debug(fmt.Sprintf("Device %s is updated", deviceName))
+	d.Logger.Info(fmt.Sprintf("Device %s is updated", deviceName))
 	service := sdk.RunningService()
 	device, err := service.GetDeviceByName(deviceName)
 	if err == nil {
@@ -762,7 +946,7 @@ func (d *Driver) UpdateDevice(deviceName string, protocols map[string]models.Pro
 // RemoveDevice is a callback function that is invoked
 // when a Device associated with this Device Service is removed
 func (d *Driver) RemoveDevice(deviceName string, protocols map[string]models.ProtocolProperties) error {
-	d.Logger.Debug(fmt.Sprintf("Device %s is removed", deviceName))
+	d.Logger.Info(fmt.Sprintf("Device %s is removed", deviceName))
 	Cache().DeleteObject(deviceName)
 	return nil
 }
@@ -800,5 +984,5 @@ func PushEventGoroutine(data ResponseCommonFrame) {
 	}
 
 	driver.AsyncCh <- asyncValues
-	driver.Logger.Info(fmt.Sprintf(" Pushed Event of Object=%s - value=%v", objectName, data.Value))
+	driver.Logger.Info(fmt.Sprintf(" Pushed Event of Object=%s - value=%+v", objectName, data.Value))
 }

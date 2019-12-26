@@ -1,9 +1,12 @@
 package driver
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"strings"
 
-	"github.com/my-ds/driver/packet"
+	"github.com/device-zigbee/driver/packet"
 )
 
 const headerConst = 0x55
@@ -53,7 +56,7 @@ type ContentRepo struct {
 // ResponseCommonFrame :	Repo --> EdgeX
 type ResponseCommonFrame struct {
 	ObjectInfo
-	StatusResponse int8   `json:"resp"` // tru Push event se khong co StatusResponse
+	StatusResponse uint8  `json:"resp"` // tru Push event se khong co StatusResponse
 	NameDevice     string `json:"name,omitempty"`
 	Description    string `json:"desc,omitempty"`
 	AttributeValue
@@ -114,11 +117,13 @@ func convertUARTFrameToContentRepo(bFrame []byte, lenFrame int16) (nameRepo stri
 	result.Cmd = int8(rxFrame.Cmd)
 
 	if checkVaildCmd(result.Cmd) == false {
+		// fmt.Println("utils 120")
 		return "", ContentRepo{}, false
 	}
 	var content ResponseCommonFrame
 	err := json.Unmarshal(rxFrame.Payload, &content)
 	if err != nil {
+		// fmt.Println("utils 126")
 		return "", ContentRepo{}, false
 	}
 	result.Content = interface{}(content)
@@ -128,6 +133,7 @@ func convertUARTFrameToContentRepo(bFrame []byte, lenFrame int16) (nameRepo stri
 		obAddr := content.ObjectAddress
 		id, ok := Cache().ConvertAddrToIDObject(obAddr)
 		if !ok {
+			// fmt.Println("utils 136: %+v", obAddr)
 			return "", ContentRepo{}, false
 		}
 		nameRepo = packet.Repo().GetRepoNameByID(id)
@@ -151,12 +157,54 @@ func sendRXUartArrayToRepo(bFrameIn []byte, lenght int16) {
 
 	nameRepo, content, ok := convertUARTFrameToContentRepo(bFrame, lenght)
 	if !ok {
+		// fmt.Println("utils 157")
 		return
 	}
 	if nameRepo == "" {
+		// fmt.Println("utils 161")
 		return
 	}
 	packet.Repo().SendToRepo(nameRepo, content)
+	// fmt.Printf("utils 163: send to repo:%s-content:%+v", nameRepo, content)
+}
+
+func serialJson(content ContentRepo) ([]byte, error) {
+	payload, err := json.Marshal(&content.Content)
+	if err != nil {
+		// fmt.Println("err 167")
+		return nil, err
+	}
+	if content.Cmd != CommandCmdConst {
+		// fmt.Println("utils 172")
+		return payload, nil
+	}
+
+	var commandFrame CommandFrame
+	_ = json.Unmarshal(payload, &commandFrame)
+	if (commandFrame.AttributeInfo == managerSubcribeAttInfo) || (commandFrame.AttributeInfo == managerSubcribeAttInfo) {
+		// fmt.Println("utils 179")
+		istart := strings.Index(string(payload), "val\":\"") + 6
+		iend := strings.LastIndex(string(payload), "\"")
+		subStart := payload[:istart]
+		subEnd := payload[iend:]
+		subConvert := payload[istart:iend]
+		fmt.Println("payload:" + string(payload))
+		fmt.Println("subStart:" + string(subStart))
+		fmt.Println("subConvert:" + string(subConvert))
+		fmt.Println("subEnd:" + string(subEnd))
+		b, err := base64.StdEncoding.DecodeString(string(subConvert))
+		if err != nil {
+			// fmt.Printf("err 187:%v", err)
+			return nil, err
+		}
+		result := make([]byte, 0, len(subStart)+len(b)+len(subEnd))
+		result = append(result, subStart...)
+		result = append(result, b...)
+		result = append(result, subEnd...)
+		// fmt.Printf("util 193:%v", result)
+		return result, nil
+	}
+	return payload, nil
 }
 
 // ConvertStructToTXUartArray : convert any struct to UARTFrame --> []byte
@@ -164,17 +212,21 @@ func sendRXUartArrayToRepo(bFrameIn []byte, lenght int16) {
 // su dung boi: SendUART() goroutine
 func convertStructToTXUartArray(content ContentRepo) ([]byte, int16, bool) {
 	var frame UARTFrame
-	payload, err := json.Marshal(content.Content)
+	payload, err := json.Marshal(&content.Content)
 	if err != nil {
 		return nil, 0, false
 	}
+	// payload, err := serialJson(content)
+	// if err != nil {
+	// 	return nil, 0, false
+	// }
 
 	frame.Header = headerConst
 	frame.Cmd = byte(content.Cmd)
 	frame.Payload = payload
 	frame.Lenght = int16(len(payload) + 1) // 1 = size(cmd)
 	// caculate CRC
-	frame.CRC = frame.Cmd
+	frame.CRC = headerConst + byte((frame.Lenght >> 8)) + byte((frame.Lenght & 0x00FF)) + frame.Cmd
 	for _, b := range payload {
 		frame.CRC += b
 	}

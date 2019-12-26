@@ -1,45 +1,47 @@
-name: "DeviceProfile"
+name: "LightProfile"
 manufacturer: "HUST-3I"
 model: "SP-01"
 labels:
-  - "test device"
-description: "Example of Simple Device"
+  - "Light OnOff"
+description: "LightProfile for Light Zigbee"
 
 deviceResources:
   -
-    name: "SwitchButton"
-    description: "Switch On/Off."
+    name: "Light"
+    description: "Light On/Off."
+    attributes:
+      { profileID: "260", clusterID: "6", attributeID: "0", valueType: "1" }
     properties:
       value:
-        { type: "Bool", readWrite: "RW", defaultValue: "true" }
+        { type: "Int8", readWrite: "RW", defaultValue: "0" }
       units:
         { type: "String", readWrite: "R", defaultValue: "On/Off" }
 
 deviceCommands:
   -
-    name: "Switch"
+    name: "Light"
     get:
-      - { operation: "get", deviceResource: "SwitchButton" }
+      - { operation: "get", deviceResource: "Light" }
     set:
-      - { operation: "set", deviceResource: "SwitchButton", parameter: "false" }
+      - { operation: "set", deviceResource: "Light", parameter: "0" }
 
 coreCommands:
   -
-    name: "Switch"
+    name: "Light"
     get:
-      path: "/api/v1/device/{deviceId}/SwitchButton"
+      path: "/api/v1/device/{deviceId}/Light"
       responses:
         -
           code: "200"
           description: ""
-          expectedValues: ["SwitchButton"]
+          expectedValues: ["Light"]
         -
           code: "503"
           description: "service unavailable"
           expectedValues: []
     put:
-      path: "/api/v1/device/{deviceId}/SwitchButton"
-      parameterNames: ["SwitchButton"]
+      path: "/api/v1/device/{deviceId}/Light"
+      parameterNames: ["Light"]
       responses:
         -
           code: "200"
