@@ -1,2 +1,2 @@
-# my-ds-zigbee-go
+# device-zigbee-go
 DeviceService Zigbee SDK-DS-Go
